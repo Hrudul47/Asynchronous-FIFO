@@ -1,0 +1,51 @@
+`timescale 1ns / 1ps
+
+module empty(
+    underflow,
+    r_clk,
+    r_rst,
+    w_ptr,
+    r_ptr
+);
+
+// Parameters
+parameter add_size = 4;
+
+// Port Declarations
+output reg                      underflow;
+input                           r_clk;
+input                           r_rst;
+input      [add_size:0]         w_ptr, r_ptr;
+
+// Internal Signals
+wire  [add_size:0] w_ptr_g;
+wire  [add_size:0] r_ptr_g;
+reg   [add_size:0] w_ptr_sync1, w_ptr_sync2;
+
+// Binary to Gray code conversion
+assign w_ptr_g = w_ptr ^ (w_ptr >> 1);
+assign r_ptr_g = r_ptr ^ (r_ptr >> 1);
+
+// Synchronize the write pointer to the read clock domain
+always @(posedge r_clk)
+begin
+    if(r_rst) begin
+        w_ptr_sync1 <= 0;
+        w_ptr_sync2 <= 0;
+        underflow   <= 1'b1; // FIFO is empty on reset
+    end
+    else begin
+        w_ptr_sync1 <= w_ptr_g;
+        w_ptr_sync2 <= w_ptr_sync1;
+        
+        // Empty condition check
+        if (w_ptr_sync2 == r_ptr_g) begin
+            underflow <= 1'b1;
+        end
+        else begin
+            underflow <= 1'b0;
+        end
+    end
+end
+
+endmodule

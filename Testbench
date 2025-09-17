@@ -1,0 +1,125 @@
+`timescale 1ns / 1ps
+
+module tb_Topmodule();
+
+// Testbench Parameters
+parameter WCLK_PERIOD = 10;  // 100 MHz write clock
+parameter RCLK_PERIOD = 12;  // ~83 MHz read clock (asynchronous)
+parameter DATA_WIDTH  = 8;
+parameter FIFO_DEPTH  = 16;
+
+// Testbench signals
+reg                      w_clk;
+reg                      r_clk;
+reg                      w_en;
+reg                      r_en;
+reg                      w_rst;
+reg                      r_rst;
+reg  [DATA_WIDTH-1:0]    w_data;
+
+wire                     overflow;
+wire                     underflow;
+wire [DATA_WIDTH-1:0]    r_data;
+
+// Instantiate the Device Under Test (DUT)
+Topmodule dut (
+    .w_clk(w_clk),
+    .r_clk(r_clk),
+    .w_en(w_en),
+    .r_en(r_en),
+    .w_rst(w_rst),
+    .r_rst(r_rst),
+    .w_data(w_data),
+    .overflow(overflow),
+    .underflow(underflow),
+    .r_data(r_data)
+);
+
+// Clock Generators
+initial begin
+    w_clk = 0;
+    forever #(WCLK_PERIOD/2) w_clk = ~w_clk;
+end
+
+initial begin
+    r_clk = 0;
+    forever #(RCLK_PERIOD/2) r_clk = ~r_clk;
+end
+
+// Main Test Sequence
+initial begin
+    $display("--- Testbench Started ---");
+
+    // 1. Initialize and Reset
+    w_en   = 0;
+    r_en   = 0;
+    w_data = 0;
+    w_rst  = 1;
+    r_rst  = 1;
+    # (WCLK_PERIOD * 5);
+    w_rst = 0;
+    r_rst = 0;
+    # (RCLK_PERIOD * 2);
+    $display("[%0t] Phase 1: Reset complete. Underflow: %b, Overflow: %b", $time, underflow, overflow);
+
+    // 2. Write until FIFO is full
+    $display("[%0t] Phase 2: Writing to fill FIFO...", $time);
+    w_en = 1;
+    r_en = 0;
+    for (integer i = 0; i < FIFO_DEPTH; i = i + 1) begin
+        @(posedge w_clk);
+        w_data <= i;
+    end
+    @(posedge w_clk); // Allow one cycle for overflow flag to propagate
+    w_en = 0;
+    $display("[%0t] Write complete. Underflow: %b, Overflow: %b", $time, underflow, overflow);
+    if (overflow !== 1'b1) $error("FAIL: Overflow flag did not assert when full.");
+
+    // 3. Test Overflow condition (attempt to write again)
+    $display("[%0t] Phase 3: Testing overflow condition...", $time);
+    w_en = 1;
+    @(posedge w_clk);
+    w_data <= 8'hAA; // This data should be ignored
+    w_en = 0;
+    $display("[%0t] Overflow test complete.", $time);
+
+
+    // 4. Read until FIFO is empty and verify data
+    $display("[%0t] Phase 4: Reading to empty FIFO...", $time);
+    r_en = 1;
+    for (integer i = 0; i < FIFO_DEPTH; i = i + 1) begin
+        @(posedge r_clk);
+        if (r_data !== i) begin
+            $error("FAIL: Data mismatch! Expected: %0d, Got: %0d", i, r_data);
+        end else begin
+            $display("Read data: %0d. OK.", r_data);
+        end
+    end
+    @(posedge r_clk); // Allow one cycle for underflow flag to propagate
+    r_en = 0;
+    $display("[%0t] Read complete. Underflow: %b, Overflow: %b", $time, underflow, overflow);
+    if (underflow !== 1'b1) $error("FAIL: Underflow flag did not assert when empty.");
+
+    // 5. Test Underflow condition (attempt to read again)
+    $display("[%0t] Phase 5: Testing underflow condition...", $time);
+    r_en = 1;
+    @(posedge r_clk);
+    r_en = 0;
+    $display("[%0t] Underflow test complete.", $time);
+    
+    // 6. Simultaneous Read and Write
+    $display("[%0t] Phase 6: Simultaneous Read/Write test...", $time);
+    w_en = 1;
+    r_en = 1;
+    for (integer i = 0; i < FIFO_DEPTH * 2; i = i + 1) begin
+        @(posedge w_clk);
+        w_data <= $random;
+    end
+    # (RCLK_PERIOD * 10);
+    $display("[%0t] Simultaneous R/W complete.", $time);
+
+    $display("\n--- Testbench Finished Successfully ---");
+    $finish;
+end
+
+endmodule

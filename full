@@ -1,0 +1,51 @@
+`timescale 1ns / 1ps
+
+module full(
+    overflow,
+    w_clk,
+    w_rst,
+    w_ptr,
+    r_ptr
+);
+
+// Parameters
+parameter add_size = 4;
+
+// Port Declarations
+output reg                      overflow;
+input                           w_clk;
+input                           w_rst;
+input      [add_size:0]         w_ptr, r_ptr;
+
+// Internal Signals
+wire  [add_size:0] w_ptr_g;
+wire  [add_size:0] r_ptr_g;
+reg   [add_size:0] r_ptr_sync1, r_ptr_sync2;
+
+// Binary to Gray code conversion
+assign w_ptr_g = w_ptr ^ (w_ptr >> 1);
+assign r_ptr_g = r_ptr ^ (r_ptr >> 1);
+
+// Synchronize the read pointer to the write clock domain
+always @(posedge w_clk)
+begin
+    if(w_rst) begin
+        r_ptr_sync1 <= 0;
+        r_ptr_sync2 <= 0;
+        overflow    <= 1'b0;
+    end
+    else begin
+        r_ptr_sync1 <= r_ptr_g;
+        r_ptr_sync2 <= r_ptr_sync1;
+        
+        // Full condition check in Gray code
+        if ({!w_ptr_g[add_size], w_ptr_g[add_size-1]} == r_ptr_sync2[add_size:add_size-1] && w_ptr_g[add_size-2:0] == r_ptr_sync2[add_size-2:0]) begin
+            overflow <= 1'b1;
+        end
+        else begin
+            overflow <= 1'b0;
+        end
+    end
+end
+
+endmodule

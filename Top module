@@ -1,0 +1,89 @@
+`timescale 1ns / 1ps
+
+module Topmodule(
+    w_clk,
+    r_clk,
+    w_en,
+    r_en,
+    w_rst,
+    r_rst,
+    w_data,
+    overflow,
+    underflow,
+    r_data
+);
+
+// Parameters
+parameter data_size = 8;
+parameter mem_depth = 16;
+parameter add_size  = 4; // Should be log2(mem_depth)
+
+// Port Declarations
+input                           w_clk, r_clk;
+input                           w_en, r_en;
+input                           w_rst, r_rst;
+input      [data_size-1:0]      w_data;
+output                          overflow;
+output                          underflow;
+output reg [data_size-1:0]      r_data;
+
+// Internal signals
+reg [add_size:0] w_ptr, r_ptr;
+reg [data_size-1:0] mem [mem_depth-1:0];
+
+// --- Module Instantiations ---
+// Instantiate the 'full' and 'empty' check modules correctly.
+full full_check (
+    .overflow(overflow), 
+    .w_clk(w_clk), 
+    .w_rst(w_rst), 
+    .w_ptr(w_ptr), 
+    .r_ptr(r_ptr)
+);
+
+empty empty_check (
+    .underflow(underflow), 
+    .r_clk(r_clk), 
+    .r_rst(r_rst), 
+    .w_ptr(w_ptr), 
+    .r_ptr(r_ptr)
+);
+
+// Write Logic (w_clk domain)
+always @(posedge w_clk)
+begin
+    if (w_rst)
+    begin
+        w_ptr <= 0;
+    end
+    else
+    begin
+        // Write to memory if write enable is high and FIFO is not full
+        if (w_en && !overflow)
+        begin
+            mem[w_ptr[add_size-1:0]] <= w_data;
+            w_ptr <= w_ptr + 1;
+        end
+    end
+end
+
+// Read Logic (r_clk domain)
+always @(posedge r_clk)
+begin
+    if (r_rst)
+    begin
+        r_ptr <= 0;
+        r_data <= 0;
+    end
+    else
+    begin
+        // Read from memory if read enable is high and FIFO is not empty
+        if (r_en && !underflow)
+        begin
+            r_data <= mem[r_ptr[add_size-1:0]];
+            r_ptr <= r_ptr + 1; // Used non-blocking assignment
+        end
+    end
+end
+
+endmodule
